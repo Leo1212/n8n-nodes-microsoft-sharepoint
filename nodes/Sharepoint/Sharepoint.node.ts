@@ -109,6 +109,11 @@ export class Sharepoint implements INodeType {
 						action: 'Create folder',
 						value: 'createFolder',
 					},
+					{
+						name: 'Set Permissions',
+						action: 'Set permissions',
+						value: 'setPermissions',
+					},
 				],
 				default: 'getItemsInFolder',
 				noDataExpression: true,
@@ -150,7 +155,7 @@ export class Sharepoint implements INodeType {
 				required: true,
 				displayOptions: {
 					show: {
-						operation: ['getFile', 'uploadFile', 'moveFile', 'getItemsInFolder', 'createFolder'],
+						operation: ['getFile', 'uploadFile', 'moveFile', 'getItemsInFolder', 'createFolder', 'setPermissions'],
 					},
 				},
 			},
@@ -167,7 +172,7 @@ export class Sharepoint implements INodeType {
 				required: true,
 				displayOptions: {
 					show: {
-						operation: ['getFile', 'uploadFile', 'moveFile', 'getItemsInFolder', 'createFolder'],
+						operation: ['getFile', 'uploadFile', 'moveFile', 'getItemsInFolder', 'createFolder', 'setPermissions'],
 					},
 				},
 			},
@@ -237,6 +242,90 @@ export class Sharepoint implements INodeType {
 				},
 			},
 			{
+				displayName: 'Folder',
+				name: 'folderLocator',
+				type: 'resourceLocator',
+				required: true,
+				default: { mode: 'path' },
+				modes: [
+					{
+						displayName: 'Path',
+						name: 'path',
+						type: 'string',
+						placeholder: 'e.g. /Shared Documents/MyFolder',
+					},
+					{
+						displayName: 'ID',
+						name: 'id',
+						type: 'string',
+						placeholder: 'e.g. 0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ',
+					}
+				],
+				displayOptions: {
+					show: {
+						operation: ['setPermissions'],
+						resource: ['folder'],
+					}
+				}
+			},
+			{
+				displayName: 'Permissions',
+				name: 'permissions',
+				type: 'fixedCollection',
+				required: true,
+				typeOptions: {
+					multipleValues: true,
+				},
+				displayOptions: {
+					show: {
+						operation: ['setPermissions'],
+						resource: ['folder'],
+					},
+				},
+				default: [{ email: '', permission: 'view' }],
+				options: [
+					{
+						displayName: 'Permission',
+						name: 'permission',
+						values: [
+							{
+								displayName: 'Email (User or Group)',
+								name: 'email',
+								type: 'string',
+								placeholder: 'user@company.com or group@company.com',
+								required: true,
+								default: '',
+							},
+							{
+								displayName: 'Permission Level',
+								name: 'permission',
+								type: 'options',
+								required: true,
+								default: 'view',
+								options: [
+									{
+										name: 'View',
+										value: 'view',
+										description: 'Read-only access',
+									},
+									{
+										name: 'Edit',
+										value: 'edit',
+										description: 'Read and write access',
+									},
+									{
+										name: 'No Access',
+										value: 'none',
+										description: 'Remove all permissions',
+									},
+								],
+							},
+						],
+					},
+				],
+			},
+			{
+
 				displayName: 'Target Folder',
 				name: 'targetFolderLocator',
 				type: 'resourceLocator',
@@ -311,6 +400,46 @@ export class Sharepoint implements INodeType {
 			},
 			{
 				displayName: 'Options',
+				name: 'options',
+				type: 'collection',
+				displayOptions: {
+					show: {
+						operation: ['setPermissions'],
+						resource: ['folder'],
+					},
+				},
+				default: {},
+				placeholder: 'Add Option',
+				options: [
+					{
+						displayName: 'Permission Behavior',
+						name: 'permissionBehavior',
+						type: 'options',
+						default: 'add',
+						options: [
+							{
+								name: 'Add to Existing Permissions',
+								value: 'add',
+								description: 'Add new permissions without removing existing ones',
+							},
+							{
+								name: 'Replace Existing Permissions',
+								value: 'replace',
+								description: 'Replace all existing permissions with the new ones',
+							},
+						],
+					},
+					{
+						displayName: 'Apply Recursively',
+						name: 'applyRecursively',
+						type: 'boolean',
+						default: false,
+						description: 'Whether to apply permissions to the folder and all its contents',
+					},
+				],
+			},
+			{
+				displayName: 'Options',
 				name: 'optionsGetItemsInFolder',
 				type: 'collection',
 				displayOptions: {
@@ -375,6 +504,7 @@ export class Sharepoint implements INodeType {
 			'getSites': site.getAll,
 			'getItemsInFolder': folder.list,
 			'createFolder': folder.create,
+			'setPermissions': folder.permissions,
 		};
 		
 		// Execute the operation!

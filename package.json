@@ -1,16 +1,21 @@
 {
   "name": "n8n-nodes-microsoft-sharepoint",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Custom n8n node to interact with Microsoft Sharepoint",
   "keywords": [
     "n8n-community-node-package"
   ],
   "license": "MIT",
   "homepage": "https://github.com/Savjee/n8n-nodes-sharepoint",
-  "author": {
+  "authors": [
+    {
     "name": "Xavier Decuyper",
     "email": "hi@simplyexplained.com"
-  },
+  }, {
+    "name": "Leo1212",
+    "email": "23333080+Leo1212@users.noreply.github.com"
+  }
+  ],
   "repository": {
     "type": "git",
     "url": "https://github.com/Savjee/n8n-nodes-sharepoint.git"

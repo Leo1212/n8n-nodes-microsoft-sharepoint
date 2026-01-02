@@ -28,6 +28,7 @@ Follow the [installation guide](https://docs.n8n.io/integrations/community-nodes
 * Folder
   * Create folder
   * List children
+  * Set Permissions
   
 ## Credentials
 
@@ -40,6 +41,9 @@ Follow the [installation guide](https://docs.n8n.io/integrations/community-nodes
 * [n8n community nodes documentation](https://docs.n8n.io/integrations/community-nodes/)
 
 ## Version history
+
+* v0.1.6 (2026-01-02)
+  * Added new action to set permissions for folders
 
 * v0.1.5 (2024-11-08)
   * Added support for returning all items in a folder (pagination)
