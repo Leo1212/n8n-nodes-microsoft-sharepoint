@@ -177,6 +177,19 @@ export async function execute(this: IExecuteFunctions, i: number): Promise<INode
 		await processInviteBatch(this, siteId, folderId, permsByLevel.edit, 'write', setPermissions);
 	}
 
+	// Apply permissions recursively to all child items if requested
+	if (applyRecursively) {
+		this.logger.info('Applying permissions recursively to child items...');
+		await applyPermissionsRecursively(
+			this,
+			siteId,
+			folderId,
+			permsByLevel,
+			permissionBehavior,
+			setPermissions
+		);
+	}
+
 	// Get all current permissions
 	const allPermissions = await getAllPermissions(this, siteId, folderId);
 
@@ -375,4 +388,103 @@ async function removePermission(
 			method: 'DELETE',
 		}
 	);
+}
+
+/**
+ * Helper function to recursively apply permissions to child items
+ */
+async function applyPermissionsRecursively(
+	thisRef: IExecuteFunctions,
+	siteId: string,
+	folderId: string,
+	permsByLevel: { [key: string]: PermissionInput[] },
+	permissionBehavior: string,
+	setPermissions: any[]
+): Promise<void> {
+	try {
+		// Get all child items in the folder
+		const childItems = await getChildItems(thisRef, siteId, folderId);
+		
+		for (const item of childItems) {
+			// Only process folders
+			if (item.folder) {
+				thisRef.logger.info(`Applying permissions to child folder: ${item.id}`);
+				
+				// If replace mode, delete all non-owner permissions first
+				if (permissionBehavior === 'replace') {
+					const allPermissions = await getAllPermissions(thisRef, siteId, item.id);
+					for (const perm of allPermissions) {
+						if (perm.roles && !perm.roles.includes('owner')) {
+							try {
+								await removePermission(thisRef, siteId, item.id, perm.id!);
+							} catch (error) {
+								thisRef.logger.warn(`Could not remove permission ${perm.id}: ${(error as any).message}`);
+							}
+						}
+					}
+				}
+
+				// Process removals
+				for (const permInput of permsByLevel.none) {
+					try {
+						const existingPermission = await findPermissionByEmail(thisRef, siteId, item.id, permInput.email);
+						if (existingPermission && existingPermission.id) {
+							await removePermission(thisRef, siteId, item.id, existingPermission.id);
+							setPermissions.push({
+								email: permInput.email,
+								type: permInput.type,
+								action: 'removed',
+								permissionId: existingPermission.id,
+								appliedToChild: item.id,
+							});
+						}
+					} catch (error) {
+						thisRef.logger.warn(`Could not remove permission from child: ${(error as any).message}`);
+					}
+				}
+
+				// Process view permissions
+				if (permsByLevel.view.length > 0) {
+					await processInviteBatch(thisRef, siteId, item.id, permsByLevel.view, 'read', setPermissions);
+				}
+
+				// Process edit permissions
+				if (permsByLevel.edit.length > 0) {
+					await processInviteBatch(thisRef, siteId, item.id, permsByLevel.edit, 'write', setPermissions);
+				}
+
+				// Recursively apply to sub-folders
+				await applyPermissionsRecursively(
+					thisRef,
+					siteId,
+					item.id,
+					permsByLevel,
+					permissionBehavior,
+					setPermissions
+				);
+			}
+		}
+	} catch (error) {
+		thisRef.logger.warn(`Error applying permissions recursively: ${(error as any).message}`);
+	}
+}
+
+/**
+ * Helper function to get child items of a folder
+ */
+async function getChildItems(
+	thisRef: IExecuteFunctions,
+	siteId: string,
+	folderId: string
+): Promise<any[]> {
+	try {
+		const result = await makeMicrosoftRequest(
+			thisRef,
+			`sites/${siteId}/drive/items/${folderId}/children`
+		);
+		return result.value || [];
+	} catch (error) {
+		thisRef.logger.warn(`Could not fetch child items: ${(error as any).message}`);
+		return [];
+	}
 }
