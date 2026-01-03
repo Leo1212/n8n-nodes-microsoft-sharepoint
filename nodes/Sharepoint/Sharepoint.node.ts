@@ -289,12 +289,49 @@ export class Sharepoint implements INodeType {
 						name: 'permission',
 						values: [
 							{
-								displayName: 'Email (User or Group)',
+								displayName: 'Recipient Type',
+								name: 'type',
+								type: 'options',
+								required: true,
+								default: 'user',
+								options: [
+									{
+										name: 'User',
+										value: 'user',
+										description: 'User email address',
+									},
+									{
+										name: 'Group',
+										value: 'group',
+										description: 'Group name or email',
+									},
+								],
+							},
+							{
+								displayName: 'User Email',
 								name: 'email',
 								type: 'string',
-								placeholder: 'user@company.com or group@company.com',
+								placeholder: 'user@company.com',
 								required: true,
 								default: '',
+								displayOptions: {
+									show: {
+										type: ['user'],
+									},
+								},
+							},
+							{
+								displayName: 'Group Name or Email',
+								name: 'email',
+								type: 'string',
+								placeholder: 'group-name or group@company.com',
+								required: true,
+								default: '',
+								displayOptions: {
+									show: {
+										type: ['group'],
+									},
+								},
 							},
 							{
 								displayName: 'Permission Level',

@@ -15,12 +15,39 @@ interface PermissionEntry {
 	id?: string;
 }
 
+interface PermissionInput {
+	type: 'user' | 'group';
+	email: string;
+	permission: 'view' | 'edit' | 'none';
+}
+
+/**
+ * NOTE: Microsoft Graph API does not support download restrictions.
+ * The "Download not possible" permission available in SharePoint UI
+ * is NOT exposed through the Microsoft Graph API. This is controlled via:
+ * - SharePoint Information Rights Management (IRM) at the site/library level
+ * - Microsoft Purview Data Loss Prevention (DLP) policies at the tenant level
+ * - Custom SharePoint permission levels configured by administrators
+ * 
+ * See: https://learn.microsoft.com/en-us/graph/api/resources/permission?view=graph-rest-1.0#roles-property-values
+ * Only supported roles: 'read', 'write', 'owner'
+ */
+
 /**
  * Sets permissions for a folder in SharePoint. Supports:
  * - Multiple users/groups with different permission levels
  * - Both by folder path and ID
  * - Adding or replacing existing permissions
  * - Applying to folder only or recursively to contents
+ *
+ * NOTE: The "View - Download Not Possible" permission is NOT supported by Microsoft Graph API.
+ * This is a SharePoint-specific feature that can only be configured via:
+ * 1. SharePoint UI with Information Rights Management (IRM)
+ * 2. Microsoft Purview DLP policies
+ * 3. Custom SharePoint permission levels configured at the site level
+ * 
+ * The current implementation will set it as a standard "read" permission, but the 
+ * download restriction must be applied separately via site settings or policies.
  *
  * https://learn.microsoft.com/en-us/graph/api/driveitem-invite?view=graph-rest-1.0&tabs=http
  * @param this
@@ -85,36 +112,40 @@ export async function execute(this: IExecuteFunctions, i: number): Promise<INode
 	const setPermissions: any[] = [];
 	
 	// Group permissions by level for batch processing
-	const permsByLevel: { [key: string]: string[] } = { view: [], edit: [], none: [] };
+	const permsByLevel: { [key: string]: PermissionInput[] } = { view: [], edit: [], none: [] };
 	for (const perm of permissions) {
 		const email = (perm.email as string).trim();
 		const permissionLevel = perm.permission as 'view' | 'edit' | 'none';
+		const type = (perm.type as 'user' | 'group') || 'user';
 		if (email) {
-			permsByLevel[permissionLevel].push(email);
+			permsByLevel[permissionLevel].push({ type, email, permission: permissionLevel });
 		}
 	}
 
 	// Process removals ('none' permissions)
-	for (const email of permsByLevel.none) {
+	for (const permInput of permsByLevel.none) {
 		try {
-			const existingPermission = await findPermissionByEmail(this, siteId, folderId, email);
+			const existingPermission = await findPermissionByEmail(this, siteId, folderId, permInput.email);
 			if (existingPermission && existingPermission.id) {
 				await removePermission(this, siteId, folderId, existingPermission.id);
 				setPermissions.push({
-					email,
+					email: permInput.email,
+					type: permInput.type,
 					action: 'removed',
 					permissionId: existingPermission.id,
 				});
 			} else {
 				setPermissions.push({
-					email,
+					email: permInput.email,
+					type: permInput.type,
 					action: 'not_found',
 					message: 'No existing permission found to remove',
 				});
 			}
 		} catch (error) {
 			setPermissions.push({
-				email,
+				email: permInput.email,
+				type: permInput.type,
 				action: 'failed',
 				error: (error as any).message || 'Unknown error',
 			});
@@ -158,12 +189,32 @@ async function processInviteBatch(
 	thisRef: IExecuteFunctions,
 	siteId: string,
 	folderId: string,
-	emails: string[],
+	permInputs: PermissionInput[],
 	role: 'read' | 'write',
 	setPermissions: any[]
 ): Promise<void> {
-	const inviteBody = {
-		recipients: emails.map(email => ({ email })),
+	// Build recipients array with proper driveRecipient format
+	const recipients = permInputs.map(perm => {
+		const recipient: any = {};
+		
+		if (perm.type === 'group') {
+			// For groups, try email first, then alias for group names
+			if (perm.email.includes('@')) {
+				recipient.email = perm.email;
+			} else {
+				// Treat as alias (group name without @domain)
+				recipient.alias = perm.email;
+			}
+		} else {
+			// For users, always use email
+			recipient.email = perm.email;
+		}
+		
+		return recipient;
+	});
+
+	const inviteBody: any = {
+		recipients,
 		roles: [role],
 		requireSignIn: true,
 		sendInvitation: false,
@@ -183,19 +234,21 @@ async function processInviteBatch(
 		const results = inviteResult.value || [];
 		for (let idx = 0; idx < results.length; idx++) {
 			const inviteData = results[idx];
-			const email = emails[idx];
+			const permInput = permInputs[idx];
 
 			// Check if this specific invite had an error
 			if (inviteData.error) {
 				setPermissions.push({
-					email,
+					email: permInput.email,
+					type: permInput.type,
 					action: 'failed',
 					error: inviteData.error.message || 'Unknown error',
 					errorCode: inviteData.error.code,
 				});
 			} else {
 				setPermissions.push({
-					email,
+					email: permInput.email,
+					type: permInput.type,
 					permission: role === 'write' ? 'edit' : 'view',
 					id: inviteData.id,
 					action: 'set',
@@ -207,9 +260,10 @@ async function processInviteBatch(
 		}
 	} catch (error) {
 		// If the entire batch failed, mark all as failed
-		for (const email of emails) {
+		for (const permInput of permInputs) {
 			setPermissions.push({
-				email,
+				email: permInput.email,
+				type: permInput.type,
 				action: 'failed',
 				error: (error as any).message || 'Unknown error',
 			});
