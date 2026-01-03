@@ -5,10 +5,20 @@ import { makeMicrosoftRequest } from "../../helpers/makeMicrosoftRequest";
 interface PermissionEntry {
 	grantedToV2?: {
 		user?: {
-			email: string;
+			email?: string;
+			displayName?: string;
+			id?: string;
 		};
 		group?: {
-			email: string;
+			email?: string;
+			displayName?: string;
+			id?: string;
+		};
+		siteUser?: {
+			displayName?: string;
+			email?: string;
+			id?: string;
+			loginName?: string;
 		};
 	};
 	roles?: string[];
@@ -125,8 +135,11 @@ export async function execute(this: IExecuteFunctions, i: number): Promise<INode
 	// Process removals ('none' permissions)
 	for (const permInput of permsByLevel.none) {
 		try {
+			this.logger.info(`Attempting to remove permission for ${permInput.type}: ${permInput.email}`);
 			const existingPermission = await findPermissionByEmail(this, siteId, folderId, permInput.email);
+			
 			if (existingPermission && existingPermission.id) {
+				this.logger.info(`Found permission with ID: ${existingPermission.id}`);
 				await removePermission(this, siteId, folderId, existingPermission.id);
 				setPermissions.push({
 					email: permInput.email,
@@ -135,6 +148,7 @@ export async function execute(this: IExecuteFunctions, i: number): Promise<INode
 					permissionId: existingPermission.id,
 				});
 			} else {
+				this.logger.warn(`Permission not found for ${permInput.email}`);
 				setPermissions.push({
 					email: permInput.email,
 					type: permInput.type,
@@ -143,6 +157,7 @@ export async function execute(this: IExecuteFunctions, i: number): Promise<INode
 				});
 			}
 		} catch (error) {
+			this.logger.error(`Error removing permission for ${permInput.email}: ${(error as any).message}`);
 			setPermissions.push({
 				email: permInput.email,
 				type: permInput.type,
@@ -272,22 +287,51 @@ async function processInviteBatch(
 }
 
 /**
- * Helper function to find a permission entry by email
+ * Helper function to find a permission entry by email, alias, or display name
+ * Tries multiple matching strategies to handle both user emails and group names
  */
 async function findPermissionByEmail(
 	thisRef: IExecuteFunctions,
 	siteId: string,
 	folderId: string,
-	email: string
+	searchTerm: string
 ): Promise<PermissionEntry | null> {
 	const permissions = await getAllPermissions(thisRef, siteId, folderId);
+	const searchTermLower = searchTerm.toLowerCase();
 
 	for (const perm of permissions) {
-		const userEmail = perm.grantedToV2?.user?.email;
-		const groupEmail = perm.grantedToV2?.group?.email;
-
-		if (userEmail === email || groupEmail === email) {
+		// Try matching user email
+		const userEmail = perm.grantedToV2?.user?.email?.toLowerCase();
+		if (userEmail && userEmail === searchTermLower) {
 			return perm;
+		}
+
+		// Try matching group email
+		const groupEmail = perm.grantedToV2?.group?.email?.toLowerCase();
+		if (groupEmail && groupEmail === searchTermLower) {
+			return perm;
+		}
+
+		// Try matching group by alias or name (handles case where alias was used instead of email)
+		const groupDisplayName = perm.grantedToV2?.group?.displayName?.toLowerCase();
+		if (groupDisplayName && groupDisplayName === searchTermLower) {
+			return perm;
+		}
+
+		// Try matching user display name
+		const userDisplayName = perm.grantedToV2?.user?.displayName?.toLowerCase();
+		if (userDisplayName && userDisplayName === searchTermLower) {
+			return perm;
+		}
+
+		// Try matching by login name (handles special formats)
+		const loginName = perm.grantedToV2?.siteUser?.loginName?.toLowerCase();
+		if (loginName) {
+			// Extract email part from login name (e.g., "i:0#.f|membership|user@domain.com" -> "user@domain.com")
+			const emailMatch = loginName.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
+			if (emailMatch && emailMatch[0].toLowerCase() === searchTermLower) {
+				return perm;
+			}
 		}
 	}
 

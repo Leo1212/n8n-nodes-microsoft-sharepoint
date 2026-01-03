@@ -303,7 +303,7 @@ export class Sharepoint implements INodeType {
 									{
 										name: 'Group',
 										value: 'group',
-										description: 'Group name or email',
+										description: 'Group name or ID',
 									},
 								],
 							},
@@ -321,7 +321,7 @@ export class Sharepoint implements INodeType {
 								},
 							},
 							{
-								displayName: 'Group Name or Email',
+								displayName: 'Group Name or ID',
 								name: 'email',
 								type: 'string',
 								placeholder: 'group-name or group@company.com',
